@@ -16,10 +16,10 @@ runner = CliRunner()
 class TestCheckCommand:
     """Tests for the check CLI command."""
 
-    def test_check_dry_run_succeeds(self) -> None:
-        """The check command with --dry-run should exit 0."""
+    def test_check_dry_run_exits_1_with_non_compliant(self) -> None:
+        """The check command with --dry-run should exit 1 (mock data has non-compliant)."""
         result = runner.invoke(app, ["check", "--dry-run"])
-        assert result.exit_code == 0
+        assert result.exit_code == 1
 
     def test_check_dry_run_shows_mock_message(self) -> None:
         """The check command with --dry-run should show the dry-run message."""
@@ -48,12 +48,18 @@ class TestCheckCommand:
         assert "team-alpha" in result.output
         assert "8" in result.output  # "X of 8 namespaces compliant"
 
-    def test_check_dry_run_single_namespace(self) -> None:
-        """--namespace should show only the specified namespace."""
+    def test_check_dry_run_single_namespace_compliant(self) -> None:
+        """A compliant single namespace should exit 0."""
         result = runner.invoke(app, ["check", "--dry-run", "-n", "team-alpha"])
         assert "team-alpha" in result.output
         assert "team-beta" not in result.output
         assert "1 of 1 namespaces compliant" in result.output
+        assert result.exit_code == 0
+
+    def test_check_dry_run_single_namespace_non_compliant(self) -> None:
+        """A non-compliant single namespace should exit 1."""
+        result = runner.invoke(app, ["check", "--dry-run", "-n", "team-gamma"])
+        assert result.exit_code == 1
 
     def test_check_dry_run_shows_all_columns(self) -> None:
         """The check command should display all three check columns."""
@@ -75,7 +81,8 @@ class TestCheckCommand:
     def test_check_json_output(self) -> None:
         """JSON output should be valid and contain expected keys."""
         result = runner.invoke(app, ["check", "--dry-run", "-f", "json"])
-        assert result.exit_code == 0
+        # exit code 1 because non-compliant namespaces exist
+        assert result.exit_code == 1
         data = json.loads(result.output)
         assert isinstance(data, list)
         assert len(data) == 5  # filtered (no system namespaces)
@@ -89,7 +96,7 @@ class TestCheckCommand:
     def test_check_yaml_output(self) -> None:
         """YAML output should be valid and contain expected data."""
         result = runner.invoke(app, ["check", "--dry-run", "-f", "yaml"])
-        assert result.exit_code == 0
+        assert result.exit_code == 1
         data = yaml.safe_load(result.output)
         assert isinstance(data, list)
         assert len(data) == 5  # filtered (no system namespaces)
@@ -99,7 +106,6 @@ class TestCheckCommand:
     def test_check_table_is_default(self) -> None:
         """Table should be the default format."""
         result = runner.invoke(app, ["check", "--dry-run"])
-        # Table output uses rich formatting with box-drawing characters
         assert "Namespace Compliance Check" in result.output
 
     def test_check_json_no_decoration(self) -> None:
@@ -116,6 +122,46 @@ class TestCheckCommand:
         assert "--include-system" in result.output
         assert "--namespace" in result.output
         assert "--format" in result.output
+        assert "--warn-only" in result.output
+
+    def test_check_help_documents_exit_codes(self) -> None:
+        """Help should document exit codes."""
+        result = runner.invoke(app, ["check", "--help"])
+        assert "Exit codes" in result.output
+
+
+class TestExitCodes:
+    """Tests for exit code behavior."""
+
+    def test_exit_1_non_compliant(self) -> None:
+        """Exit code 1 when non-compliant namespaces exist."""
+        result = runner.invoke(app, ["check", "--dry-run"])
+        assert result.exit_code == 1
+
+    def test_exit_0_all_compliant(self) -> None:
+        """Exit code 0 when checking a compliant namespace."""
+        result = runner.invoke(app, ["check", "--dry-run", "-n", "team-alpha"])
+        assert result.exit_code == 0
+
+    def test_exit_0_warn_only(self) -> None:
+        """--warn-only should exit 0 even with non-compliant namespaces."""
+        result = runner.invoke(app, ["check", "--dry-run", "--warn-only"])
+        assert result.exit_code == 0
+
+    def test_warn_only_still_shows_output(self) -> None:
+        """--warn-only should still display the compliance results."""
+        result = runner.invoke(app, ["check", "--dry-run", "--warn-only"])
+        assert "namespaces compliant" in result.output
+
+    def test_exit_1_single_non_compliant_namespace(self) -> None:
+        """Exit code 1 for a single non-compliant namespace."""
+        result = runner.invoke(app, ["check", "--dry-run", "-n", "team-gamma"])
+        assert result.exit_code == 1
+
+    def test_exit_0_single_compliant_namespace(self) -> None:
+        """Exit code 0 for a single compliant namespace."""
+        result = runner.invoke(app, ["check", "--dry-run", "-n", "staging"])
+        assert result.exit_code == 0
 
 
 class TestFilters:
