@@ -7,7 +7,7 @@ import typer
 from ns_guardian.filters import filter_results
 from ns_guardian.k8s_client import check_namespaces
 from ns_guardian.mock import get_mock_data
-from ns_guardian.output import render_table
+from ns_guardian.output import OutputFormat, render
 
 app = typer.Typer(
     name="ns-guardian",
@@ -28,10 +28,12 @@ def check(
     kubeconfig: Optional[str] = typer.Option(None, "--kubeconfig", help="Path to kubeconfig file."),
     include_system: bool = typer.Option(False, "--include-system", help="Include system namespaces in output."),
     namespace: Optional[str] = typer.Option(None, "--namespace", "-n", help="Check a single specific namespace."),
+    output_format: OutputFormat = typer.Option(OutputFormat.TABLE, "--format", "-f", help="Output format: table, json, yaml."),
 ) -> None:
     """Check namespaces for compliance resources."""
     if dry_run:
-        typer.echo("Running in dry-run mode with mock data\n")
+        if output_format == OutputFormat.TABLE:
+            typer.echo("Running in dry-run mode with mock data\n")
         results = get_mock_data()
     else:
         try:
@@ -41,7 +43,7 @@ def check(
             raise typer.Exit(code=2) from e
 
     results = filter_results(results, include_system=include_system, namespace=namespace)
-    render_table(results)
+    render(results, output_format)
 
 
 if __name__ == "__main__":

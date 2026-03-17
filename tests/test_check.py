@@ -1,5 +1,8 @@
 """Tests for the check command using mock data."""
 
+import json
+
+import yaml
 from typer.testing import CliRunner
 
 from ns_guardian.filters import filter_results, is_system_namespace
@@ -69,6 +72,42 @@ class TestCheckCommand:
         result = runner.invoke(app, ["check", "--dry-run"])
         assert "2 of 5 namespaces compliant" in result.output
 
+    def test_check_json_output(self) -> None:
+        """JSON output should be valid and contain expected keys."""
+        result = runner.invoke(app, ["check", "--dry-run", "-f", "json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert isinstance(data, list)
+        assert len(data) == 5  # filtered (no system namespaces)
+        for item in data:
+            assert "namespace" in item
+            assert "resource_quota" in item
+            assert "limit_range" in item
+            assert "network_policy" in item
+            assert "compliant" in item
+
+    def test_check_yaml_output(self) -> None:
+        """YAML output should be valid and contain expected data."""
+        result = runner.invoke(app, ["check", "--dry-run", "-f", "yaml"])
+        assert result.exit_code == 0
+        data = yaml.safe_load(result.output)
+        assert isinstance(data, list)
+        assert len(data) == 5  # filtered (no system namespaces)
+        for item in data:
+            assert "namespace" in item
+
+    def test_check_table_is_default(self) -> None:
+        """Table should be the default format."""
+        result = runner.invoke(app, ["check", "--dry-run"])
+        # Table output uses rich formatting with box-drawing characters
+        assert "Namespace Compliance Check" in result.output
+
+    def test_check_json_no_decoration(self) -> None:
+        """JSON output should not have any rich decoration."""
+        result = runner.invoke(app, ["check", "--dry-run", "-f", "json"])
+        assert "Running in dry-run mode" not in result.output
+        assert "Namespace Compliance Check" not in result.output
+
     def test_check_help_shows_all_flags(self) -> None:
         """All flags should appear in help output."""
         result = runner.invoke(app, ["check", "--help"])
@@ -76,6 +115,7 @@ class TestCheckCommand:
         assert "--kubeconfig" in result.output
         assert "--include-system" in result.output
         assert "--namespace" in result.output
+        assert "--format" in result.output
 
 
 class TestFilters:
