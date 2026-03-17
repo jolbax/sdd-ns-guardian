@@ -1,0 +1,25 @@
+[project]
+name = "ns-guardian"
+version = "0.1.0"
+description = "A CLI tool for auditing Kubernetes namespace compliance."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "typer",
+    "kubernetes",
+    "pyyaml",
+    "rich",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-cov",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+ns-guardian = "ns_guardian.main:app"
