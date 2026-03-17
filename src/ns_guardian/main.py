@@ -8,6 +8,7 @@ from ns_guardian.filters import filter_results
 from ns_guardian.k8s_client import check_namespaces
 from ns_guardian.mock import get_mock_data
 from ns_guardian.output import OutputFormat, render
+from ns_guardian.prometheus import write_prometheus_rule
 
 app = typer.Typer(
     name="ns-guardian",
@@ -55,6 +56,23 @@ def check(
     has_non_compliant = any(not r.compliant for r in results)
     if has_non_compliant and not warn_only:
         raise typer.Exit(code=1)
+
+
+@app.command(name="generate-alert")
+def generate_alert(
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="Write output to a file instead of stdout."),
+) -> None:
+    """Generate a PrometheusRule YAML for namespace compliance alerting.
+
+    Outputs a PrometheusRule resource definition that alerts on namespaces
+    missing compliance resources. Works without cluster access.
+    """
+    yaml_content = write_prometheus_rule(output_path=output)
+
+    if output:
+        typer.echo(f"PrometheusRule written to {output}")
+    else:
+        print(yaml_content, end="")
 
 
 if __name__ == "__main__":
