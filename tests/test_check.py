@@ -29,11 +29,29 @@ class TestCheckCommand:
         assert "team-beta" in result.output
         assert "kube-system" in result.output
 
-    def test_check_dry_run_shows_quota_status(self) -> None:
-        """The check command with --dry-run should show Yes/No for ResourceQuota."""
+    def test_check_dry_run_shows_all_columns(self) -> None:
+        """The check command should display all three check columns."""
+        result = runner.invoke(app, ["check", "--dry-run"])
+        assert "ResourceQuota" in result.output
+        assert "LimitRange" in result.output
+        assert "NetworkPolicy" in result.output
+
+    def test_check_dry_run_shows_yes_no(self) -> None:
+        """The check command should show Yes/No for each resource."""
         result = runner.invoke(app, ["check", "--dry-run"])
         assert "Yes" in result.output
         assert "No" in result.output
+
+    def test_check_dry_run_shows_summary(self) -> None:
+        """The check command should display the compliance summary."""
+        result = runner.invoke(app, ["check", "--dry-run"])
+        assert "of" in result.output
+        assert "namespaces compliant" in result.output
+
+    def test_check_dry_run_summary_count(self) -> None:
+        """The summary should show correct compliant count (4 of 8)."""
+        result = runner.invoke(app, ["check", "--dry-run"])
+        assert "4 of 8 namespaces compliant" in result.output
 
     def test_check_help_shows_dry_run(self) -> None:
         """The --dry-run flag should appear in help output."""
@@ -68,16 +86,41 @@ class TestMockData:
         assert "kube-system" in names
         assert "staging" in names
 
+    def test_mock_data_compliance_status(self) -> None:
+        """Mock data should have expected compliance states."""
+        data = get_mock_data()
+        by_name = {d.name: d for d in data}
+        assert by_name["team-alpha"].compliant is True
+        assert by_name["team-beta"].compliant is False
+        assert by_name["team-gamma"].compliant is False
+        assert by_name["team-delta"].compliant is False
+        assert by_name["staging"].compliant is True
+
 
 class TestModels:
     """Tests for data models."""
 
-    def test_compliant_when_has_quota(self) -> None:
-        """A namespace with a ResourceQuota should be compliant."""
-        result = NamespaceCheckResult(name="test", resource_quota=True)
+    def test_compliant_when_all_resources(self) -> None:
+        """A namespace with all resources should be compliant."""
+        result = NamespaceCheckResult(name="test", resource_quota=True, limit_range=True, network_policy=True)
         assert result.compliant is True
 
-    def test_not_compliant_when_no_quota(self) -> None:
+    def test_not_compliant_when_missing_quota(self) -> None:
         """A namespace without a ResourceQuota should not be compliant."""
-        result = NamespaceCheckResult(name="test", resource_quota=False)
+        result = NamespaceCheckResult(name="test", resource_quota=False, limit_range=True, network_policy=True)
+        assert result.compliant is False
+
+    def test_not_compliant_when_missing_limit_range(self) -> None:
+        """A namespace without a LimitRange should not be compliant."""
+        result = NamespaceCheckResult(name="test", resource_quota=True, limit_range=False, network_policy=True)
+        assert result.compliant is False
+
+    def test_not_compliant_when_missing_network_policy(self) -> None:
+        """A namespace without a NetworkPolicy should not be compliant."""
+        result = NamespaceCheckResult(name="test", resource_quota=True, limit_range=True, network_policy=False)
+        assert result.compliant is False
+
+    def test_not_compliant_when_all_missing(self) -> None:
+        """A namespace with no resources should not be compliant."""
+        result = NamespaceCheckResult(name="test", resource_quota=False, limit_range=False, network_policy=False)
         assert result.compliant is False

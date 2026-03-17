@@ -9,8 +9,10 @@ class NamespaceCheckResult:
 
     name: str
     resource_quota: bool
+    limit_range: bool
+    network_policy: bool
 
     @property
     def compliant(self) -> bool:
-        """A namespace is compliant if it has a ResourceQuota."""
-        return self.resource_quota
+        """A namespace is compliant if it has all three compliance resources."""
+        return self.resource_quota and self.limit_range and self.network_policy
