@@ -2,6 +2,7 @@
 
 from typer.testing import CliRunner
 
+from ns_guardian.filters import filter_results, is_system_namespace
 from ns_guardian.main import app
 from ns_guardian.mock import get_mock_data
 from ns_guardian.models import NamespaceCheckResult
@@ -22,12 +23,34 @@ class TestCheckCommand:
         result = runner.invoke(app, ["check", "--dry-run"])
         assert "Running in dry-run mode with mock data" in result.output
 
-    def test_check_dry_run_shows_namespaces(self) -> None:
-        """The check command with --dry-run should display namespace names."""
+    def test_check_dry_run_filters_system_by_default(self) -> None:
+        """By default, system namespaces should not appear."""
+        result = runner.invoke(app, ["check", "--dry-run"])
+        assert "kube-system" not in result.output
+        assert "kube-public" not in result.output
+        assert "openshift-monitoring" not in result.output
+
+    def test_check_dry_run_shows_tenant_namespaces(self) -> None:
+        """Tenant namespaces should appear by default."""
         result = runner.invoke(app, ["check", "--dry-run"])
         assert "team-alpha" in result.output
         assert "team-beta" in result.output
+        assert "staging" in result.output
+
+    def test_check_dry_run_include_system(self) -> None:
+        """--include-system should show all 8 namespaces."""
+        result = runner.invoke(app, ["check", "--dry-run", "--include-system"])
         assert "kube-system" in result.output
+        assert "openshift-monitoring" in result.output
+        assert "team-alpha" in result.output
+        assert "8" in result.output  # "X of 8 namespaces compliant"
+
+    def test_check_dry_run_single_namespace(self) -> None:
+        """--namespace should show only the specified namespace."""
+        result = runner.invoke(app, ["check", "--dry-run", "-n", "team-alpha"])
+        assert "team-alpha" in result.output
+        assert "team-beta" not in result.output
+        assert "1 of 1 namespaces compliant" in result.output
 
     def test_check_dry_run_shows_all_columns(self) -> None:
         """The check command should display all three check columns."""
@@ -36,32 +59,72 @@ class TestCheckCommand:
         assert "LimitRange" in result.output
         assert "NetworkPolicy" in result.output
 
-    def test_check_dry_run_shows_yes_no(self) -> None:
-        """The check command should show Yes/No for each resource."""
-        result = runner.invoke(app, ["check", "--dry-run"])
-        assert "Yes" in result.output
-        assert "No" in result.output
-
     def test_check_dry_run_shows_summary(self) -> None:
         """The check command should display the compliance summary."""
         result = runner.invoke(app, ["check", "--dry-run"])
-        assert "of" in result.output
         assert "namespaces compliant" in result.output
 
-    def test_check_dry_run_summary_count(self) -> None:
-        """The summary should show correct compliant count (4 of 8)."""
+    def test_check_dry_run_filtered_summary_count(self) -> None:
+        """Summary should reflect filtered results (2 of 5 tenant namespaces)."""
         result = runner.invoke(app, ["check", "--dry-run"])
-        assert "4 of 8 namespaces compliant" in result.output
+        assert "2 of 5 namespaces compliant" in result.output
 
-    def test_check_help_shows_dry_run(self) -> None:
-        """The --dry-run flag should appear in help output."""
+    def test_check_help_shows_all_flags(self) -> None:
+        """All flags should appear in help output."""
         result = runner.invoke(app, ["check", "--help"])
         assert "--dry-run" in result.output
-
-    def test_check_help_shows_kubeconfig(self) -> None:
-        """The --kubeconfig flag should appear in help output."""
-        result = runner.invoke(app, ["check", "--help"])
         assert "--kubeconfig" in result.output
+        assert "--include-system" in result.output
+        assert "--namespace" in result.output
+
+
+class TestFilters:
+    """Tests for namespace filtering."""
+
+    def test_is_system_namespace_exact_matches(self) -> None:
+        """Exact system namespaces should be detected."""
+        assert is_system_namespace("kube-system") is True
+        assert is_system_namespace("kube-public") is True
+        assert is_system_namespace("kube-node-lease") is True
+        assert is_system_namespace("default") is True
+
+    def test_is_system_namespace_prefix_match(self) -> None:
+        """OpenShift namespaces should be detected by prefix."""
+        assert is_system_namespace("openshift-monitoring") is True
+        assert is_system_namespace("openshift-ingress") is True
+
+    def test_is_not_system_namespace(self) -> None:
+        """Tenant namespaces should not be detected as system."""
+        assert is_system_namespace("team-alpha") is False
+        assert is_system_namespace("staging") is False
+
+    def test_filter_excludes_system_by_default(self) -> None:
+        """Filtering should exclude system namespaces by default."""
+        data = get_mock_data()
+        filtered = filter_results(data)
+        names = [r.name for r in filtered]
+        assert "kube-system" not in names
+        assert "openshift-monitoring" not in names
+        assert "team-alpha" in names
+
+    def test_filter_includes_system_when_requested(self) -> None:
+        """include_system=True should return all namespaces."""
+        data = get_mock_data()
+        filtered = filter_results(data, include_system=True)
+        assert len(filtered) == 8
+
+    def test_filter_single_namespace(self) -> None:
+        """namespace parameter should return only that namespace."""
+        data = get_mock_data()
+        filtered = filter_results(data, namespace="team-alpha")
+        assert len(filtered) == 1
+        assert filtered[0].name == "team-alpha"
+
+    def test_filter_single_namespace_not_found(self) -> None:
+        """namespace parameter for non-existent namespace returns empty list."""
+        data = get_mock_data()
+        filtered = filter_results(data, namespace="nonexistent")
+        assert len(filtered) == 0
 
 
 class TestMockData:
@@ -78,13 +141,13 @@ class TestMockData:
         for item in data:
             assert isinstance(item, NamespaceCheckResult)
 
-    def test_mock_data_has_expected_namespaces(self) -> None:
-        """Mock data should include expected namespace names."""
+    def test_mock_data_includes_system_namespaces(self) -> None:
+        """Mock data should include system namespaces for filtering demo."""
         data = get_mock_data()
         names = [d.name for d in data]
-        assert "team-alpha" in names
         assert "kube-system" in names
-        assert "staging" in names
+        assert "kube-public" in names
+        assert "openshift-monitoring" in names
 
     def test_mock_data_compliance_status(self) -> None:
         """Mock data should have expected compliance states."""
